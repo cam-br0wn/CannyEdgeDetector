@@ -132,7 +132,22 @@ def determine_thresholds(grad_arr):
 
 
 def suppress_non_maxima(mag_arr, dir_arr, high_thresh, low_thresh):
-    print('not implemented yet for reason: yolo swag 300')
+    # in order to suppress non-maxima, we want to look at the pixels perpendicular to the direction of current pixel
+    # dir_arr contains directions of pixels
+
+    # pertinent constants
+    neg7_8_pi = (-7/8) * np.pi
+    neg5_8_pi = (-5/8) * np.pi
+    neg3_8_pi = (-3/8) * np.pi
+    neg1_8_pi = (-1/8) * np.pi
+    pos1_8_pi = (1/8) * np.pi
+    pos3_8_pi = (3/8) * np.pi
+    pos5_8_pi = (5/8) * np.pi
+    pos7_8_pi = (7/8) * np.pi
+
+    non_max_arr = np.zeros(mag_arr.shape)
+    # 0 is S, -pi/2 is E, pi/2 is W, pi/-pi is N
+    #
     return
 
 

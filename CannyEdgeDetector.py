@@ -1,5 +1,6 @@
 import numpy as np
-from PIL import Image, ImageFilter
+from PIL import Image
+from matplotlib import pyplot as plt
 
 
 def convolute(x, y):
@@ -106,6 +107,9 @@ def determine_thresholds(grad_arr):
     flat_grad = grad_arr.flatten()
     stretched_grad_arr = stretch_hist(grad_arr, flat_grad)
     flat_stretch_grad_arr = stretched_grad_arr.flatten()
+    # plt.hist(flat_grad, bins=255)
+    # plt.hist(flat_stretch_grad_arr, bins=255)
+    # plt.show()
     # now we want to calculate the non-edge proportion
     # this value should be tweaked as necessary (anything less than it is deemed a non-edge pixel)
     non_edge_thresh = 156

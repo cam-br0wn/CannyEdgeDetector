@@ -2,6 +2,21 @@ import numpy as np
 from PIL import Image, ImageFilter
 
 
+def convolute(x, y):
+    padding_amt = y.shape[0] // 2
+    padded = np.zeros((x.shape[0] + (2 * padding_amt), x.shape[1] + (2 * padding_amt)))
+    padded[padding_amt:x.shape[0] + padding_amt, padding_amt:x.shape[1] + padding_amt] = x
+    result = np.zeros(padded.shape)
+    for row in range(padding_amt, padding_amt + x.shape[0]):
+        for col in range(padding_amt, padding_amt + x.shape[1]):
+            sum = 0
+            for y_row in range(y.shape[0]):
+                for y_col in range(y.shape[1]):
+                    sum += y[y_row, y_col] * padded[row - padding_amt + y_row, col - padding_amt + y_col]
+            result[row, col] = sum
+    return result[padding_amt:x.shape[0] + padding_amt, padding_amt:x.shape[1] + padding_amt]
+
+
 def convert_grayscale(img_arr):
     gray_arr = []
     for row in range(len(img_arr)):
@@ -14,49 +29,28 @@ def convert_grayscale(img_arr):
     return gray_arr
 
 
-# NOT IN A WORKING STATE, ROTATES AND DOESN'T BLUR PROPERLY
 def gaussian_smooth(img_arr, n, sigma):
     img_arr = np.array(convert_grayscale(img_arr))
-    gaussian_arr = np.zeros((len(img_arr), len(img_arr[0])))
     kernel = np.zeros((n, n))
-    kernel_indices = np.zeros((n, n, 2))
     for row in range(n):
         for col in range(n):
-            kernel[row, col] = 1 / (2 * np.pi * np.power(sigma, 2)) * np.exp((-1 * ((col - int(n/2))**2 + (row - int(n/2))**2) / (2 * (sigma**2))))
-            kernel_indices[row, col] = [col - int(n/2), row - int(n/2)]
-    for row in range(len(img_arr)):
-        for col in range(len(img_arr[0])):
-            new_val = 0
-            val_ct = 1
-            for ker_row in range(n):
-                for ker_col in range(n):
-                    col_idx = int(col + kernel_indices[ker_row, ker_col, 0])
-                    row_idx = int(row + kernel_indices[ker_row, ker_col, 1])
-                    if (col_idx > -1) and (row_idx > -1) and (row_idx < img_arr.shape[1]) and (col_idx < img_arr.shape[0]):
-                        val_ct += 1
-                        new_val += kernel[ker_row, ker_col] * img_arr[col_idx, row_idx]
-            new_val = int(new_val/val_ct)
-            gaussian_arr[row, col] = new_val
-    return gaussian_arr
+            kernel[row, col] = (1 / (2 * np.pi * (sigma ** 2))) * np.exp(
+                (-1 * ((col - (n//2))**2 + (row - (n//2))**2)) / (2 * (sigma ** 2)))
+    return convolute(img_arr, kernel)
 
 
 def image_gradient(gauss_arr):
     sobel_x = np.array([[1, 0, -1], [2, 0, -2], [1, 0, -1]])
     sobel_y = np.array([[1, 2, 1], [0, 0, 0], [-1, -2, -1]])
-    transformed = np.zeros(gauss_arr.shape)
-    for row in range(gauss_arr.shape[0]):
-        for col in range(gauss_arr.shape[1]):
-            new_x = 0
-            new_y = 0
-            for sob_r in range(3):
-                for sob_c in range(3):
-                    r_idx = row - 1 + sob_r
-                    c_idx = col - 1 + sob_c
-                    if (r_idx > -1) and (r_idx < gauss_arr.shape[0]) and (c_idx > -1) and (c_idx < gauss_arr.shape[1]):
-                        new_x += sobel_x[sob_r, sob_c] * gauss_arr[r_idx, c_idx]
-                        new_y += sobel_y[sob_r, sob_c] * gauss_arr[r_idx, c_idx]
-            transformed[row, col] = min(255, int(np.sqrt(new_x**2 + new_y**2)))
-    return transformed
+    transformed_x = convolute(gauss_arr, sobel_x)
+    transformed_y = convolute(gauss_arr, sobel_y)
+    magnitude = np.zeros(gauss_arr.shape)
+    direction = np.zeros(gauss_arr.shape)
+    for row in range(magnitude.shape[0]):
+        for col in range(magnitude.shape[1]):
+            magnitude[row, col] = min([255, np.sqrt((transformed_x[row, col]**2)+(transformed_y[row,col]**2))])
+            direction[row, col] = np.arctan2(transformed_y[row, col], transformed_x[row, col])
+    return magnitude, direction
 
 
 # helper function for finding thresholds
@@ -74,7 +68,7 @@ def gen_freq_dict(arr):
 def gen_prob_dict(dictionary, n):
     prob_dict = {}
     for key in dictionary.keys():
-        prob_dict[key] = dictionary[key]/n
+        prob_dict[key] = dictionary[key] / n
     return prob_dict
 
 
@@ -89,23 +83,40 @@ def cdf_from_prob_dict(prob_dict, i):
     return cumulative_prob
 
 
+def stretch_hist(img_arr, img_1d):
+    stretched_img = []
+    # frequency of each grayscale value
+    freq_dict = gen_freq_dict(img_1d)
+    # number of pixels
+    n = len(img_arr) * len(img_arr[0])
+    # probability of each grayscale value
+    prob_dict = dict(sorted(gen_prob_dict(freq_dict, n).items()))
+    for row in range(len(img_arr)):
+        stretched_img.append([])
+        for col in range(len(img_arr[row])):
+            stretched_img[row].append(int(255 * cdf_from_prob_dict(prob_dict, img_arr[row][col])))
+    return np.array(stretched_img)
+
+
 def determine_thresholds(grad_arr):
     # here we want to determine the high threshold by taking the histogram and setting a cutoff point
     # low threshold will then be half the high threshold
     high_thresh = 0
     # first, collapse the gradient array into one dimension
     flat_grad = grad_arr.flatten()
+    stretched_grad_arr = stretch_hist(grad_arr, flat_grad)
+    flat_stretch_grad_arr = stretched_grad_arr.flatten()
     # now we want to calculate the non-edge proportion
     # this value should be tweaked as necessary (anything less than it is deemed a non-edge pixel)
-    non_edge_thresh = 128
+    non_edge_thresh = 156
     non_edge_ct = 0
-    for pix in flat_grad:
+    for pix in flat_stretch_grad_arr:
         if pix < non_edge_thresh:
             non_edge_ct += 1
     # we will use this percentage as the cutoff for our cdf
-    non_edge_pct = non_edge_ct / len(flat_grad)
-    freq_dict = gen_freq_dict(flat_grad)
-    prob_dict = dict(sorted(gen_prob_dict(freq_dict, len(flat_grad)).items()))
+    non_edge_pct = non_edge_ct / len(flat_stretch_grad_arr)
+    freq_dict = gen_freq_dict(flat_stretch_grad_arr)
+    prob_dict = dict(sorted(gen_prob_dict(freq_dict, len(flat_stretch_grad_arr)).items()))
     for key in prob_dict.keys():
         if cdf_from_prob_dict(prob_dict, key) > non_edge_pct:
             high_thresh = key
@@ -114,7 +125,7 @@ def determine_thresholds(grad_arr):
     return high_thresh, low_thresh
 
 
-def supress_non_maxima(grad_arr, high_thresh, low_thresh):
+def supress_non_maxima(mag_arr, dir_arr, high_thresh, low_thresh):
     print('not implemented yet for reason: yolo swag 300')
     return
 
@@ -123,11 +134,12 @@ def main():
     image_list = ['gun1.bmp', 'joy1.bmp', 'lena.bmp', 'pointer1.bmp', 'test1.bmp']
 
     # DEBUG ITEMS
-    test_grayscales = False
-    test_gaussian = True
-    test_gradient = False
-    bypass_gaussian = True
-    test_thresh = False
+    test_grayscales = 0
+    test_gaussian = 0
+    test_gradient = 0
+    test_thresh = 1
+    n = 5
+    sigma = np.sqrt(n)
 
     # test grayscale capability
     if test_grayscales:
@@ -141,42 +153,26 @@ def main():
     if test_gaussian:
         for image_file in image_list:
             image_bmp = Image.open(image_file)
-            if not bypass_gaussian:
-                image_bmp = np.array(image_bmp)
-                gaussian_image = gaussian_smooth(image_bmp, 3, 0.1)
-            else:
-                image_bmp = image_bmp.filter(ImageFilter.GaussianBlur)
-                image_bmp = np.array(image_bmp)
-                gaussian_image = np.array(convert_grayscale(image_bmp))
+            image_bmp = np.array(image_bmp)
+            gaussian_image = gaussian_smooth(image_bmp, n, sigma)
             converted_image = Image.fromarray(gaussian_image.astype(np.uint8))
             converted_image.save('gaussian/' + image_file)
 
     if test_gradient:
         for image_file in image_list:
             image_bmp = Image.open(image_file)
-            if not bypass_gaussian:
-                image_bmp = np.array(image_bmp)
-                gradient_image = image_gradient(gaussian_smooth(image_bmp, 3, 0.1))
-            else:
-                image_bmp = image_bmp.filter(ImageFilter.GaussianBlur)
-                image_bmp = np.array(image_bmp)
-                image_bmp = np.array(convert_grayscale(image_bmp))
-                gradient_image = image_gradient(image_bmp)
+            image_bmp = np.array(image_bmp)
+            gradient_image = image_gradient(gaussian_smooth(image_bmp, n, sigma))[0]
             converted_image = Image.fromarray(gradient_image.astype(np.uint8))
             converted_image.save('gradient/' + image_file)
 
     if test_thresh:
         for image_file in image_list:
             image_bmp = Image.open(image_file)
-            if not bypass_gaussian:
-                image_bmp = np.array(image_bmp)
-                gradient_image = image_gradient(gaussian_smooth(image_bmp, 3, 0.1))
-            else:
-                image_bmp = image_bmp.filter(ImageFilter.GaussianBlur)
-                image_bmp = np.array(image_bmp)
-                image_bmp = np.array(convert_grayscale(image_bmp))
-                gradient_image = image_gradient(image_bmp)
+            image_bmp = np.array(image_bmp)
+            gradient_image = image_gradient(gaussian_smooth(image_bmp, n, sigma))[0]
             print(determine_thresholds(gradient_image))
+
     return
 
 

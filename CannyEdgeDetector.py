@@ -28,7 +28,7 @@ def convert_grayscale(img_arr):
             #     color_sum += img_arr[row][col][color]
             # gray_arr[row].append(int(color_sum / len(img_arr[row][col])))
             pix = img_arr[row][col]
-            gray_arr[row].append(int((0.299*pix[0]) + (0.587 * pix[1]) + (0.114 * pix[2])))
+            gray_arr[row].append(int((0.299 * pix[0]) + (0.587 * pix[1]) + (0.114 * pix[2])))
     return gray_arr
 
 
@@ -38,7 +38,7 @@ def gaussian_smooth(img_arr, n, sigma):
     for row in range(n):
         for col in range(n):
             kernel[row, col] = (1 / (2 * np.pi * (sigma ** 2))) * np.exp(
-                (-1 * ((col - (n//2))**2 + (row - (n//2))**2)) / (2 * (sigma ** 2)))
+                (-1 * ((col - (n // 2)) ** 2 + (row - (n // 2)) ** 2)) / (2 * (sigma ** 2)))
     return convolute(img_arr, kernel)
 
 
@@ -51,7 +51,7 @@ def image_gradient(gauss_arr):
     direction = np.zeros(gauss_arr.shape)
     for row in range(magnitude.shape[0]):
         for col in range(magnitude.shape[1]):
-            magnitude[row, col] = min([255, np.sqrt((transformed_x[row, col]**2)+(transformed_y[row,col]**2))])
+            magnitude[row, col] = min([255, np.sqrt((transformed_x[row, col] ** 2) + (transformed_y[row, col] ** 2))])
             direction[row, col] = np.arctan2(transformed_y[row, col], transformed_x[row, col])
     return magnitude, direction
 
@@ -114,7 +114,7 @@ def determine_thresholds(grad_arr):
     # plt.show()
     # now we want to calculate the non-edge proportion
     # this value should be tweaked as necessary (anything less than it is deemed a non-edge pixel)
-    non_edge_thresh = 156
+    non_edge_thresh = 0
     non_edge_ct = 0
     for pix in flat_stretch_grad_arr:
         if pix < non_edge_thresh:
@@ -136,18 +136,52 @@ def suppress_non_maxima(mag_arr, dir_arr, high_thresh, low_thresh):
     # dir_arr contains directions of pixels
 
     # pertinent constants
-    neg7_8_pi = (-7/8) * np.pi
-    neg5_8_pi = (-5/8) * np.pi
-    neg3_8_pi = (-3/8) * np.pi
-    neg1_8_pi = (-1/8) * np.pi
-    pos1_8_pi = (1/8) * np.pi
-    pos3_8_pi = (3/8) * np.pi
-    pos5_8_pi = (5/8) * np.pi
-    pos7_8_pi = (7/8) * np.pi
+    neg7_8_pi = (-7 / 8) * np.pi
+    neg5_8_pi = (-5 / 8) * np.pi
+    neg3_8_pi = (-3 / 8) * np.pi
+    neg1_8_pi = (-1 / 8) * np.pi
+    pos1_8_pi = (1 / 8) * np.pi
+    pos3_8_pi = (3 / 8) * np.pi
+    pos5_8_pi = (5 / 8) * np.pi
+    pos7_8_pi = (7 / 8) * np.pi
 
-    non_max_arr = np.zeros(mag_arr.shape)
+    high_thresh_arr = np.zeros(mag_arr.shape)
+    low_thresh_arr = np.zeros(mag_arr.shape)
     # 0 is S, -pi/2 is E, pi/2 is W, pi/-pi is N
-    #
+    for row in range(1, mag_arr.shape[0] - 1):
+        for col in range(1, mag_arr.shape[1] - 1):
+            dir = dir_arr[row, col]
+            # keep in mind that the pixels we are selecting should be those perpendicular to the direction
+            # ex. if direction is N/S, pixels should be those E/W
+            # north or south case
+            if (pos1_8_pi > dir >= neg1_8_pi) or (dir >= pos7_8_pi) or (dir <= neg7_8_pi):
+                pix_a = mag_arr[row, col - 1]  # picking W
+                pix_b = mag_arr[row, col + 1]  # picking E
+            # NE or SW case
+            elif (pos3_8_pi > dir >= pos1_8_pi) or (neg7_8_pi < dir <= neg5_8_pi):
+                pix_a = mag_arr[row - 1, col - 1]  # picking NW
+                pix_b = mag_arr[row + 1, col + 1]  # picking SE
+            # E or W case
+            elif (pos5_8_pi > dir >= pos3_8_pi) or (neg5_8_pi < dir <= neg3_8_pi):
+                pix_a = mag_arr[row + 1, col]  # picking N
+                pix_b = mag_arr[row - 1, col]  # picking S
+            # NW or SE case
+            else:
+                pix_a = mag_arr[row - 1, col + 1]  # picking NE
+                pix_b = mag_arr[row + 1, col - 1]  # picking SW
+
+            # setting the high and low threshold arrays
+            mag_arr_pix = mag_arr[row, col]
+            if mag_arr_pix >= pix_a and mag_arr_pix >= pix_b:
+                if mag_arr_pix >= high_thresh:
+                    high_thresh_arr[row, col] = mag_arr_pix
+                if mag_arr_pix >= low_thresh:
+                    low_thresh_arr[row, col] = mag_arr_pix
+    return high_thresh_arr, low_thresh_arr
+
+
+def edge_linking(high_thresh_arr, low_thresh_arr):
+    
     return
 
 
@@ -155,10 +189,13 @@ def main():
     image_list = ['gun1.bmp', 'joy1.bmp', 'lena.bmp', 'pointer1.bmp', 'test1.bmp']
 
     # DEBUG ITEMS
-    test_grayscales = 1
+    test_grayscales = 0
     test_gaussian = 0
-    test_gradient = 1
+    test_gradient = 0
     test_thresh = 0
+    test_nonmax = 1
+
+    # determining gaussian kernel size/variance
     n = 5
     sigma = np.sqrt(n)
 
@@ -193,6 +230,18 @@ def main():
             image_bmp = np.array(image_bmp)
             gradient_image = image_gradient(gaussian_smooth(image_bmp, n, sigma))[0]
             print(determine_thresholds(gradient_image))
+
+    if test_nonmax:
+        for image_file in image_list:
+            image_bmp = Image.open(image_file)
+            image_bmp = np.array(image_bmp)
+            magnitude, direction = image_gradient(gaussian_smooth(image_bmp, n, sigma))
+            high_thresh, low_thresh = determine_thresholds(magnitude)
+            high_thresh_img, low_thresh_img = suppress_non_maxima(magnitude, direction, high_thresh, low_thresh)
+            high_thresh_img = Image.fromarray(high_thresh_img.astype(np.uint8))
+            low_thresh_img = Image.fromarray(low_thresh_img.astype(np.uint8))
+            high_thresh_img.save('high_thresh/' + image_file)
+            low_thresh_img.save('low_thresh/' + image_file)
 
     return
 

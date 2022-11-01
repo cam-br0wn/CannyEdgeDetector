@@ -23,10 +23,12 @@ def convert_grayscale(img_arr):
     for row in range(len(img_arr)):
         gray_arr.append([])
         for col in range(len(img_arr[row])):
-            color_sum = 0
-            for color in range(len(img_arr[row][col])):
-                color_sum += img_arr[row][col][color]
-            gray_arr[row].append(int(color_sum / len(img_arr[row][col])))
+            # color_sum = 0
+            # for color in range(len(img_arr[row][col])):
+            #     color_sum += img_arr[row][col][color]
+            # gray_arr[row].append(int(color_sum / len(img_arr[row][col])))
+            pix = img_arr[row][col]
+            gray_arr[row].append(int((0.299*pix[0]) + (0.587 * pix[1]) + (0.114 * pix[2])))
     return gray_arr
 
 
@@ -129,7 +131,7 @@ def determine_thresholds(grad_arr):
     return high_thresh, low_thresh
 
 
-def supress_non_maxima(mag_arr, dir_arr, high_thresh, low_thresh):
+def suppress_non_maxima(mag_arr, dir_arr, high_thresh, low_thresh):
     print('not implemented yet for reason: yolo swag 300')
     return
 
@@ -138,10 +140,10 @@ def main():
     image_list = ['gun1.bmp', 'joy1.bmp', 'lena.bmp', 'pointer1.bmp', 'test1.bmp']
 
     # DEBUG ITEMS
-    test_grayscales = 0
+    test_grayscales = 1
     test_gaussian = 0
-    test_gradient = 0
-    test_thresh = 1
+    test_gradient = 1
+    test_thresh = 0
     n = 5
     sigma = np.sqrt(n)
 

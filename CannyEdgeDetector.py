@@ -1,6 +1,11 @@
 import numpy as np
 from PIL import Image
 from matplotlib import pyplot as plt
+import sys
+
+# globals to help recursion
+global weak_edges
+global strong_edges
 
 
 def convolute(x, y):
@@ -51,7 +56,7 @@ def image_gradient(gauss_arr):
     direction = np.zeros(gauss_arr.shape)
     for row in range(magnitude.shape[0]):
         for col in range(magnitude.shape[1]):
-            magnitude[row, col] = min([255, np.sqrt((transformed_x[row, col] ** 2) + (transformed_y[row, col] ** 2))])
+            magnitude[row, col] = min([255, int(np.sqrt((transformed_x[row, col] ** 2) + (transformed_y[row, col] ** 2)))])
             direction[row, col] = np.arctan2(transformed_y[row, col], transformed_x[row, col])
     return magnitude, direction
 
@@ -145,8 +150,8 @@ def suppress_non_maxima(mag_arr, dir_arr, high_thresh, low_thresh):
     pos5_8_pi = (5 / 8) * np.pi
     pos7_8_pi = (7 / 8) * np.pi
 
-    high_thresh_arr = np.zeros(mag_arr.shape)
-    low_thresh_arr = np.zeros(mag_arr.shape)
+    high_thresh_arr = np.zeros(mag_arr.shape, dtype=int)
+    low_thresh_arr = np.zeros(mag_arr.shape, dtype=int)
     # 0 is S, -pi/2 is E, pi/2 is W, pi/-pi is N
     for row in range(1, mag_arr.shape[0] - 1):
         for col in range(1, mag_arr.shape[1] - 1):
@@ -174,18 +179,57 @@ def suppress_non_maxima(mag_arr, dir_arr, high_thresh, low_thresh):
             mag_arr_pix = mag_arr[row, col]
             if mag_arr_pix >= pix_a and mag_arr_pix >= pix_b:
                 if mag_arr_pix >= high_thresh:
-                    high_thresh_arr[row, col] = mag_arr_pix
+                    high_thresh_arr[row, col] = 255
                 if mag_arr_pix >= low_thresh:
-                    low_thresh_arr[row, col] = mag_arr_pix
-    return high_thresh_arr, low_thresh_arr
-
-
-def edge_linking(high_thresh_arr, low_thresh_arr):
-    
+                    low_thresh_arr[row, col] = int(mag_arr_pix)
+    global weak_edges
+    weak_edges = low_thresh_arr
+    global strong_edges
+    strong_edges = high_thresh_arr
     return
 
 
+def process_weak_edges(curr_r, curr_c, old_r, old_c):
+    weak_neighbors = np.array([(curr_r, curr_c)])
+    for y in range(-1, 2):
+        for x in range(-1, 2):
+            if (curr_r + y, curr_c + x) != (old_r, old_c) and (y != 0 and x != 0) and (weak_edges[curr_r + y, curr_c + x]):
+                weak_neighbors = np.concatenate((weak_neighbors, process_weak_edges(curr_r + y, curr_c + x, curr_r, curr_c)))
+    return weak_neighbors
+
+
+def edge_linking():
+    # we want to link strong edges using the presence of weak edges
+    # to do this, iterate over the strong image, and if there is a weak edge present, convert the pixel to high in the strong edge
+    height = strong_edges.shape[0]
+    width = weak_edges.shape[1]
+    connected_arr = np.zeros(strong_edges.shape)
+    for row in range(1, height - 1):
+        for col in range(1, width - 1):
+            # from here we need to determine if we are at an edge pixel within the strong array
+            if not strong_edges[row, col]:
+                continue
+            connected_arr[row, col] = 255
+            strong_neighbor_ct = 0
+            weak_neighbors = []
+            for i in range(-1, 2):
+                for j in range(-1, 2):
+                    if strong_edges[row + i, col + j] and (i, j) != (0, 0):
+                        strong_neighbor_ct += 1
+                    if (not strong_edges[row + i, col + j]) and (i, j) != (0, 0) and (weak_edges[row + i, col + j] > 0):
+                        weak_neighbors.append([row + i, col + j])
+            weak_neighbors = np.array(weak_neighbors)
+            if strong_neighbor_ct == 1 and len(weak_neighbors) > 0:
+                for [r, c] in weak_neighbors:
+                    weak_neighbors = np.concatenate((weak_neighbors, process_weak_edges(r, c, row, col)))
+            for [r, c] in weak_neighbors:
+                connected_arr[r, c] = 255
+    return connected_arr
+
+
 def main():
+    sys.setrecursionlimit(10000)
+    print(sys.getrecursionlimit())
     image_list = ['gun1.bmp', 'joy1.bmp', 'lena.bmp', 'pointer1.bmp', 'test1.bmp']
 
     # DEBUG ITEMS
@@ -194,6 +238,7 @@ def main():
     test_gradient = 0
     test_thresh = 0
     test_nonmax = 1
+    test_edge_linking = 1
 
     # determining gaussian kernel size/variance
     n = 5
@@ -237,11 +282,25 @@ def main():
             image_bmp = np.array(image_bmp)
             magnitude, direction = image_gradient(gaussian_smooth(image_bmp, n, sigma))
             high_thresh, low_thresh = determine_thresholds(magnitude)
-            high_thresh_img, low_thresh_img = suppress_non_maxima(magnitude, direction, high_thresh, low_thresh)
+            suppress_non_maxima(magnitude, direction, 50, 25)
+            high_thresh_img = strong_edges
+            low_thresh_img = weak_edges
             high_thresh_img = Image.fromarray(high_thresh_img.astype(np.uint8))
             low_thresh_img = Image.fromarray(low_thresh_img.astype(np.uint8))
             high_thresh_img.save('high_thresh/' + image_file)
             low_thresh_img.save('low_thresh/' + image_file)
+
+    if test_edge_linking:
+        for image_file in image_list:
+            image_bmp = Image.open(image_file)
+            image_bmp = np.array(image_bmp)
+            magnitude, direction = image_gradient(gaussian_smooth(image_bmp, n, sigma))
+            high_thresh, low_thresh = determine_thresholds(magnitude)
+            suppress_non_maxima(magnitude, direction, 50, 25)
+            connected_img = edge_linking()
+            connected_img = Image.fromarray(connected_img.astype(np.uint8))
+            connected_img.save('linked/' + image_file)
+
 
     return
 
